@@ -1,0 +1,58 @@
+name: Build dynetlsm Windows wheel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out build repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.7 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.7"
+          architecture: "x64"
+
+      - name: Prepare compatible build tools
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade "pip<24.1" "setuptools<68" wheel
+          python -m pip install "Cython==0.29.36" "numpy==1.21.6" "scipy==1.7.3"
+
+      - name: Download and patch dynetlsm
+        shell: pwsh
+        run: |
+          git clone https://github.com/joshloyal/dynetlsm.git upstream-dynetlsm
+          Set-Location upstream-dynetlsm
+          $setup = Get-Content setup.py -Raw
+          $setup = $setup.Replace('extra_compile_args=["-O3", "-Wall", "-fPIC"],', 'extra_compile_args=(["/O2"] if os.name == "nt" else ["-O3", "-Wall", "-fPIC"]),')
+          Set-Content setup.py $setup -Encoding UTF8
+
+      - name: Build wheel
+        shell: pwsh
+        run: |
+          Set-Location upstream-dynetlsm
+          python setup.py bdist_wheel
+          Get-ChildItem dist
+
+      - name: Verify compiled extension is inside wheel
+        shell: pwsh
+        run: |
+          Set-Location upstream-dynetlsm
+          $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
+          python -m pip install --no-deps $wheel.FullName
+          python -c "import dynetlsm; print(dynetlsm.__file__)"
+          python -c "import dynetlsm.gaussian_likelihood_fast as g; print(g.__file__); assert g.__file__.lower().endswith('.pyd')"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynetlsm-0.1.0-cp37-win-amd64
+          path: upstream-dynetlsm/dist/*.whl
+          if-no-files-found: error
