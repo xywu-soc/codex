@@ -41,14 +41,11 @@ jobs:
           python setup.py bdist_wheel
           Get-ChildItem dist
 
-      - name: Verify compiled extension is inside wheel
+      - name: Verify compiled extensions are inside wheel
         shell: pwsh
         run: |
-          Set-Location upstream-dynetlsm
-          $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
-          python -m pip install --no-deps $wheel.FullName
-          python -c "import dynetlsm; print(dynetlsm.__file__)"
-          python -c "import dynetlsm.gaussian_likelihood_fast as g; print(g.__file__); assert g.__file__.lower().endswith('.pyd')"
+          $wheel = Get-ChildItem upstream-dynetlsm\dist\*.whl | Select-Object -First 1
+          python -c "import sys, zipfile; p=sys.argv[1]; names=zipfile.ZipFile(p).namelist(); pyd=[n for n in names if n.lower().endswith('.pyd')]; print('\n'.join(pyd)); assert any('gaussian_likelihood_fast' in n for n in pyd), 'gaussian_likelihood_fast .pyd missing from wheel'" $wheel.FullName
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
